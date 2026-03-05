@@ -1,48 +1,55 @@
 require('dotenv').config();
 const { pool } = require('./pool_db'); 
-// 1. Función para INSERTAR una nueva tarea
+
+// 1. Función para INSERTAR
 async function insertarTarea(titulo, descripcion) {
     try {
-        const consulta = 'INSERT INTO tareas (titulo, descripcion) VALUES ($1, $2)';
+        // Agregamos RETURNING * al final del string
+        const consulta = 'INSERT INTO tareas (titulo, descripcion) VALUES ($1, $2) RETURNING *';
         const valores = [titulo, descripcion];
 
         const resultado = await pool.query(consulta, valores);
 
-        // Confirmamos usando rowCount
-        console.log(`✅ Tarea "${titulo}" insertada con éxito. Filas afectadas: ${resultado.rowCount}`);
+        // Ahora mostramos la fila completa que nos devolvió el RETURNING
+        const fila = resultado.rows[0];
+        console.log(`✅ Tarea "${fila.titulo}" insertada. ID generado: ${fila.id}`);
+        
+        return fila.id; // Retornamos el ID para que la prueba de abajo sea dinámica
     } catch (error) {
         console.error('❌ Error al insertar:', error.message);
     }
 }
 
-// 2. Función para ACTUALIZAR una tarea existente
+// 2. Función para ACTUALIZAR
 async function actualizarTarea(id, nuevoTitulo, nuevaDescripcion) {
     try {
-        const consulta = 'UPDATE tareas SET titulo = $1, descripcion = $2 WHERE id = $3';
+        // Agregamos RETURNING * para ver cómo quedó la tarea tras el cambio
+        const consulta = 'UPDATE tareas SET titulo = $1, descripcion = $2 WHERE id = $3 RETURNING *';
         const valores = [nuevoTitulo, nuevaDescripcion, id];
 
         const resultado = await pool.query(consulta, valores);
 
         if (resultado.rowCount > 0) {
-            console.log(`🔄 Tarea con ID ${id} actualizada. Filas afectadas: ${resultado.rowCount}`);
+            const fila = resultado.rows[0];
+            console.log(`🔄 Tarea ID ${fila.id} actualizada a: "${fila.titulo}"`);
         } else {
-            console.log(`⚠️ No se encontró la tarea con ID ${id} (0 filas afectadas).`);
+            console.log(`⚠️ No se encontró la tarea con ID ${id}.`);
         }
     } catch (error) {
         console.error('❌ Error al actualizar:', error.message);
     }
 }
 
-// 3. Función para ELIMINAR una tarea
+// 3. Función para ELIMINAR
 async function eliminarTarea(id) {
     try {
-        const consulta = 'DELETE FROM tareas WHERE id = $1';
-        const valores = [id];
-
-        const resultado = await pool.query(consulta, valores);
+        // RETURNING en el DELETE nos permite despedirnos de los datos
+        const consulta = 'DELETE FROM tareas WHERE id = $1 RETURNING *';
+        const resultado = await pool.query(consulta, [id]);
 
         if (resultado.rowCount > 0) {
-            console.log(`🗑️ Tarea con ID ${id} eliminada. Filas afectadas: ${resultado.rowCount}`);
+            const fila = resultado.rows[0];
+            console.log(`🗑️ Tarea eliminada: "${fila.titulo}" (ID: ${fila.id})`);
         } else {
             console.log(`⚠️ No se pudo eliminar: El ID ${id} no existe.`);
         }
@@ -51,19 +58,21 @@ async function eliminarTarea(id) {
     }
 }
 
-// --- ORQUESTACIÓN DE PRUEBAS ---
+// --- ORQUESTACIÓN DE PRUEBAS (Lógica de tus tareas) ---
 async function main() {
-    console.log('--- 🛠️ Iniciando Pruebas de CRUD ---\n');
+    console.log('--- 🛠️ Iniciando Pruebas de CRUD con RETURNING ---\n');
 
-    await insertarTarea('Estudiar SQL Injecton', 'Aprender por qué los marcadores $1 son vitales.');
+    // PASO 1: Insertamos y guardamos el ID real que nos dio la DB
+    const idGenerado = await insertarTarea('Estudiar SQL Injection', 'Aprender por qué los marcadores $1 son vitales.');
 
-    // Actualizamos la tarea inicial 
-    await actualizarTarea(1, 'Aprender PostgreSQL', 'Completar todos los ejercicios de la guía de base de datos.');
+    // PASO 2: Usamos ese ID real para actualizar (evita el error de ID inexistente)
+    if (idGenerado) {
+        await actualizarTarea(idGenerado, 'Aprender PostgreSQL', 'Completar todos los ejercicios de la guía.');
+        
+        // PASO 3: Eliminamos la tarea exacta que creamos
+        await eliminarTarea(idGenerado);
+    }
 
-    // Intentamos eliminar la tarea que acabamos de crear 
-    await eliminarTarea(2);
-
-    // Cerramos la conexión al terminar
     await pool.end();
     console.log('\n--- ✨ Pruebas finalizadas y conexión cerrada ---');
 }
